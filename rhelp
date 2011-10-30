@@ -1,0 +1,300 @@
+#!/usr/bin/env perl
+
+# rhelp is a simple tool to replace file and folder names with spaces, special characters and symbols.
+#
+# @autor: El Chacal Del Útero <https://github.com/elchacaldelutero/>
+#
+# @version: 1.0
+#
+# @created 20100112
+#
+
+package rhelp;
+use utf8;
+use warnings;
+use strict;
+use File::Find;
+use Encode;
+use Cwd;
+
+### uncomment for use in Win systems.
+#use Win32::File;
+
+#don't change this if you are not sure what are you doing.
+my $Replace;
+my $show_help;
+my $version = "v1.0";
+my $replace_special_chars;
+my $replace_spaces;
+my $replace_symbols;
+my $replace_all;
+my $show_path;
+my $path = "";
+my $check_for_hidden;
+my $is_hidden;
+my $folder = "";
+my $total_files = 0;
+my $total_folders = 0;
+my $min_depth = 0;
+my $max_depth;
+my @backup;
+
+#backup subroutines
+sub apply_backup
+{
+  $show_help = 1;
+  if(-e $_[0] and $_[0] =~ /rhelp.backup$/)
+  {
+    print "\n---------Starting work---------\n\n";
+    open (my $fh, '<'.$_[0])or die "could not open";
+    defined(my $line = <$fh>) or die "premature eof";
+    @backup = split /::/, $line;
+    my $total = 0;
+    foreach my $b (@backup){$b =~ /(.*)=(.*)/;
+    if(!-e $2){print "$2\n$1\n is already recovered or missed.\n\n";}
+    else{print "Renaming:\n $2 \n $1\n\n";rename ($2, $1);$total++;}}
+    print "\nTotal recovered: $total\n";
+    print "\n---------Work finished---------\n";
+  }
+  else{print "\nThis is not a valid rhelp.backup file.\n";}
+}
+
+sub create_backup_file
+{
+  open (my $fh, '>'.$folder.'/rhelp.backup');
+  @backup = reverse(@backup);
+  foreach my $f (@backup){print $fh $f."::";}
+  close $fh;
+}
+
+#common subroutines
+sub replace_reg_exp
+{
+  return $_[0] =~tr{áéíóúÁÉÍÓÚàèìòùÀÈÌÒÙçÇñÑ}{aeiouAEIOUaeiouAEIOUcCnN}
+  if($_[1] eq "c");
+  return $_[0] =~ tr[!~$&%¿¡'"#·][]d if($_[1] eq "m");
+  if($_[1] eq "s"){$_[0] =~ s{\s+$}{}g;$_[0] =~ s{ }{-}g;
+  $_[0] =~ s{\-+$}{};return $_[0];
+  }
+}
+
+sub print_output
+{
+  my $dir = getcwd;
+  push(@backup, "$dir/$_=$dir/$_[0]") if($Replace);
+  $path = $_;
+  $path = $File::Find::name if($show_path);
+  $path .= "/" if(-d $_);
+  $_[0] .= "/" if(-d $_);
+  my $attrs="[";
+  if(-d $_){$attrs.="d";}
+  elsif(-f $_){$attrs.="f";}
+  if($is_hidden){$is_hidden = 0;$attrs.="-h";}
+  $attrs.="] ";
+  $total_files++ if(-f $_);$total_folders++ if(-d $_);
+  if($Replace){$attrs = "";}
+  print "original: $attrs".$path."\n";
+  print "modified: ".$_[0]."\n\n";
+}
+
+sub find_for_all
+{
+  my $mod = $_;
+  $mod =~ &replace_reg_exp($mod,"c");
+  $mod =~ &replace_reg_exp($mod,"m");
+  $mod =~ &replace_reg_exp($mod,"s");
+  if($mod ne $_)
+  {
+    &print_output($mod);
+    &rename_this($mod) if($Replace);
+  }
+}
+
+sub find_for_spaces
+{
+  if($_=~ /\s/ and defined($replace_spaces))
+  {
+    my $mod = $_;$mod =~ &replace_reg_exp($mod,"s");
+    &print_output($mod);
+    &rename_this($mod) if($Replace);
+   }
+}
+
+sub find_for_symbols
+{
+  my $attr;
+  ### uncomment for use in Win systems.
+  #if(Win32::File::GetAttributes($_,$attr)&&($attr & HIDDEN)){if(!$check_for_hidden){return;}$is_hidden = 1;}
+  if($File::Find::dir =~ /\.+\w/){if(!$check_for_hidden){return;}$is_hidden = 1;}
+  if($_=~ /\!|~|\$|&|¡|¿|%|#|·/i and defined($replace_symbols))
+  {
+    my $mod = $_;$mod =~ &replace_reg_exp($mod,"m");
+    $mod =~ &replace_reg_exp($mod,"s") if($replace_spaces);
+    &print_output($mod);
+    &rename_this($mod) if($Replace);
+  }
+}
+
+sub find_for_special_chars
+{
+  if($_=~ /á|é|í|ó|ú|à|è|ì|ò|ù|ç|ñ/i and defined($replace_special_chars))
+  {
+    my $mod = $_;$mod =~ &replace_reg_exp($mod,"c");
+    &print_output($mod);
+    &rename_this($mod) if($Replace);
+  }
+}
+
+sub find_for
+{
+  my $depth = $File::Find::dir =~ tr[/][];
+  my $attr;
+  ### uncomment for use in Win systems.
+  #if(Win32::File::GetAttributes($_,$attr)&&($attr & HIDDEN)){if(!$check_for_hidden){return;}$is_hidden = 1;}
+  if($File::Find::dir =~ /\.+\w/){if(!$check_for_hidden){return;}$is_hidden = 1;}
+  if($_ !~ /^\.+/)
+  {
+    if($min_depth > $depth){return;}
+    if(defined($max_depth)){return if $depth < $min_depth;}
+    &find_for_all if($replace_all);
+    &find_for_spaces if($replace_spaces and !$replace_all);
+    &find_for_special_chars if($replace_special_chars and !$replace_all);
+  }
+}
+
+sub check_depth
+{
+  if(defined($max_depth))
+  {
+    my $depth = $File::Find::dir =~ tr[/][];
+    return @_ if $depth < $max_depth;
+    return grep { not -d } @_ if $depth == $max_depth;
+    return;
+  }
+  else{return @_;}
+}
+
+sub rename_this
+{
+  print "RENAMED:\n";
+  rename($_, $_[0]);
+}
+
+sub print_help
+{
+  $show_help = 1;
+  my @lines =
+<<"output"
+
+rhelp $version is a simple tool to replace file and folder names with spaces, special characters and symbols.
+
+USAGE:
+ rhelp [args] [path]
+
+ARGS:
+ -min=[int]   minimum depth level.
+ -max=[int]   maximum depth level.
+ -c           replace special characters.
+ -s           replace spaces. End line spaces will be removed.
+ -m           replace simbols. Use a separated find function.
+ -a           replace special characters, spaces and symbols at the same time.
+ -p           show path to file/folder.
+ -hidden      search for hidden files and folders.(USE IT WITH CAUTION)
+ -R           Replacement mode.(USE IT WITH CAUTION)
+ -B           reverse the replacement, using rhelp.backup file.
+ -h           print help.
+ -v           print version.
+
+IMPORTANT:
+in -R mode it will create a file named rhelp.backup inside the folder you passed to rhelp, where are the original and replaced names with absolute path.
+Please do not delete this file unless you are sure that replaced names are correct and did not break any file or folder.
+
+-B mode need the path to rhelp.backup file.
+
+with -hidden flag it will search for hidden files and folders, be sure to use it with caution, it can break any system folder or file.
+
+output
+;
+  print @lines;
+}
+
+sub print_version
+{
+  my @lines =
+<<"output"
+
+------------------------------------------------
+rhelp $version\nAUTHOR: El Chacal Del Utero
+------------------------------------------------
+output
+;
+  print @lines;
+  $show_help = 1;
+}
+
+sub do_magic
+{
+  my $replacement_text = "THIS IS ONLY A SIMULATION, IF YOU WANT TO PERFORM THE REPLACEMENT USE -R FLAG";
+  print "\n---------Starting work---------\n\n";
+  print "$replacement_text\n\n" if(!$Replace);
+  &finddepth({preprocess => \&check_depth, wanted => \&find_for}, $folder);
+  &finddepth({preprocess => \&check_depth, wanted => \&find_for_symbols}, $folder)
+  if($replace_symbols and !$replace_all);
+  &create_backup_file() if($Replace);
+  print "\n\nTotal files: ".$total_files;
+  print "\nTotal folders: ".$total_folders;
+  print "\n>Total: ".($total_files+$total_folders);
+  print "\n\n$replacement_text" if(!$Replace);
+  print "\n\n---------Work finished---------\n";
+}
+
+sub check_hidden_prompt
+{
+  print "\nAre you sure you want to check in hidden folders? and search hidden files? y/n\n";
+  my $sure=<>;if($sure =~ /(y$|yes$)/i){&do_magic;}elsif($sure =~ /n$|no$/i)
+  {$check_for_hidden = 0;&do_magic;}
+  else{print "Bad answer, sorry.";}
+}
+
+# get the first/next argument and process it // first checks if there are arguments, then the -h flag.
+if(grep{/^\-+\w/}@ARGV)
+{
+  if(!grep{/^\-h$/} @ARGV)
+  {
+    if(!grep{/^\-B$/} @ARGV)
+    {
+      while(scalar(@ARGV))
+      {
+        my $arg=shift(@ARGV);
+        if($arg eq '-v'){&print_version;}
+        elsif($arg =~ /^\-/)
+        {
+          if($arg eq '-R'){$Replace = 1;}
+          elsif($arg eq "-a"){$replace_all = 1;}
+          elsif($arg eq "-c"){$replace_special_chars = 1;}
+          elsif($arg eq "-s"){$replace_spaces = 1;}
+          elsif($arg eq "-m"){$replace_symbols = 1;}
+          elsif($arg eq "-p"){$show_path = 1;}
+          elsif($arg eq "-hidden"){$check_for_hidden = 1;}
+          elsif($arg=~ m/^\-min/){$arg =~ m{(\d)};$min_depth = $1;}
+          elsif($arg=~ m/^\-max/){$arg =~ m{(\d)};$max_depth = $1;}
+          else{$show_help = 1;print "\nunknown argument '$arg'\nUse 'rhelp -h' to see the arguments list, and how to use 'rhelp'.\n";}
+        }
+        elsif(-d $arg and $arg =~ /\s*/)
+        {
+          $folder = $arg;
+          if($check_for_hidden){&check_hidden_prompt;}else{&do_magic;}
+        }
+        else{die "\nSorry '".$arg."' is not a folder.\n";}
+      }
+    }else
+    {
+      if(defined($ARGV[1])){&apply_backup($ARGV[1]);}
+      else{$show_help = 1;print "I need the rhelp.backup file";}
+    }
+  }
+  else{&print_help;}
+}
+else{print "Missing arguments\n";$show_help=1;}
+
+print "I need a folder to process.\n" if($folder eq "" and !$show_help);
