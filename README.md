@@ -18,7 +18,7 @@ rhelp is a simple tool to replace file and folder names with spaces, special cha
 
 Author
 ------------------------------------
-El Chacal Del Útero
+Alejandro El Informático
 
 Requirements
 ------------------------------------

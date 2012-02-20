@@ -2,7 +2,7 @@
 
 # rhelp is a simple tool to replace file and folder names with spaces, special characters and symbols.
 #
-# @autor: El Chacal Del Útero <https://github.com/elchacaldelutero/>
+# @autor: Alejandro El Informático <https://github.com/ainformatico/rhelp>
 #
 # @version: 1.0
 #
@@ -224,7 +224,7 @@ sub print_version
 <<"output"
 
 ------------------------------------------------
-rhelp $version\nAUTHOR: El Chacal Del Utero
+rhelp $version\nAUTHOR: Alejandro El Informático
 ------------------------------------------------
 output
 ;
